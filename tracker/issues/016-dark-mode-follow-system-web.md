@@ -2,13 +2,13 @@
 id: 16
 title: Dark mode should follow the system preference on web
 milestone: M0
-status: in-progress
+status: done
 owner: agent
 area: [app]
 size: S
 blocked_by: [6]
 branch: feat/016-dark-mode-should-follow-the-system-prefe
-merged: ""
+merged: 070b5bd
 ---
 
 ## Goal
