@@ -1,5 +1,14 @@
 import { colorScheme as nwColorScheme, useColorScheme as useNwColorScheme } from "nativewind";
-import { createContext, type ReactNode, useCallback, useContext, useMemo, useState } from "react";
+import {
+  createContext,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useLayoutEffect,
+  useMemo,
+  useState,
+} from "react";
+import { syncSystemDarkClass } from "@/lib/systemTheme";
 
 export type ThemePreference = "system" | "light" | "dark";
 
@@ -20,10 +29,18 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const [preference, setPreferenceState] = useState<ThemePreference>("system");
   const { colorScheme } = useNwColorScheme();
 
-  const setPreference = useCallback((p: ThemePreference) => {
-    setPreferenceState(p);
-    nwColorScheme.set(p);
-  }, []);
+  const setPreference = useCallback((p: ThemePreference) => setPreferenceState(p), []);
+
+  // Runs on mount and on every change, before paint:
+  //  1. tell NativeWind the preference ("system" clears its override so useColorScheme() follows
+  //     the OS; on web it also removes the `dark` class);
+  //  2. web only (no-op natively): re-mirror the OS preference onto the `dark` class while "system".
+  // Doing 1 on mount matters: NativeWind's web runtime snapshots the class at import time, which
+  // on a dark-OS "system" load would otherwise leave useColorScheme() stuck on "light".
+  useLayoutEffect(() => {
+    nwColorScheme.set(preference);
+    return syncSystemDarkClass(preference === "system");
+  }, [preference]);
 
   const value = useMemo<ThemeContextValue>(
     () => ({ preference, scheme: colorScheme === "dark" ? "dark" : "light", setPreference }),
