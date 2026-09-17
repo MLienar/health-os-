@@ -2,13 +2,13 @@
 id: 2
 title: pnpm workspace scaffold with Biome, TypeScript, and tracker scripts
 milestone: M0
-status: in-progress
+status: done
 owner: agent
 area: [infra]
 size: M
 blocked_by: []
 branch: feat/002-pnpm-workspace-scaffold-with-biome-types
-merged: ""
+merged: 2d76eec
 ---
 
 ## Goal
