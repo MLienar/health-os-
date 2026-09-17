@@ -2,13 +2,13 @@
 id: 6
 title: Expo app shell with Router, NativeWind, tabs, dark mode, web export, Playwright
 milestone: M0
-status: in-progress
+status: done
 owner: agent
 area: [app, infra]
 size: L
 blocked_by: [2]
 branch: feat/006-expo-app-shell-with-router-nativewind-ta
-merged: ""
+merged: d05f59d
 ---
 
 ## Goal
