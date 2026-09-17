@@ -13,8 +13,8 @@
 //   node scripts/tracker.mjs reopen <id>           status -> todo
 //   node scripts/tracker.mjs board                 regenerate tracker/BOARD.md
 
-import { readdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -46,7 +46,8 @@ function parseValue(raw) {
 }
 
 function parseIssue(file) {
-  const text = readFileSync(join(ISSUES_DIR, file), "utf8");
+  // Normalize CRLF so a checkout with autocrlf cannot break parsing (.gitattributes also forces LF).
+  const text = readFileSync(join(ISSUES_DIR, file), "utf8").replace(/\r\n/g, "\n");
   const m = text.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
   if (!m) throw new Error(`${file}: missing frontmatter`);
   const fm = {};
@@ -56,7 +57,10 @@ function parseIssue(file) {
     if (idx < 0) throw new Error(`${file}: bad frontmatter line "${line}"`);
     fm[line.slice(0, idx).trim()] = parseValue(line.slice(idx + 1));
   }
-  return { file, fm, body: m[2], rawFrontmatter: m[1] };
+  // `deps` is the safe, always-an-array view of blocked_by. check() reports the malformed case;
+  // everything else iterates `deps` so a typo like `blocked_by: 3` cannot crash the CLI.
+  const deps = Array.isArray(fm.blocked_by) ? fm.blocked_by : [];
+  return { file, fm, deps, body: m[2], rawFrontmatter: m[1] };
 }
 
 function loadIssues() {
@@ -88,11 +92,11 @@ function byId(issues) {
 
 function isReady(issue, map) {
   if (issue.fm.status !== "todo") return false;
-  return (issue.fm.blocked_by ?? []).every((id) => map.get(id)?.fm.status === "done");
+  return issue.deps.every((id) => map.get(id)?.fm.status === "done");
 }
 
 function blockers(issue, map) {
-  return (issue.fm.blocked_by ?? []).filter((id) => map.get(id)?.fm.status !== "done");
+  return issue.deps.filter((id) => map.get(id)?.fm.status !== "done");
 }
 
 // ---------- validation ----------
@@ -113,13 +117,23 @@ function check(issues, milestones) {
     if (!STATUSES.includes(f.status)) errors.push(`${where}: bad status ${f.status}`);
     if (!OWNERS.includes(f.owner)) errors.push(`${where}: bad owner ${f.owner}`);
     if (!SIZES.includes(f.size)) errors.push(`${where}: bad size ${f.size}`);
-    if (!Array.isArray(f.area) || f.area.length === 0) errors.push(`${where}: area must be a non-empty list`);
-    if (!Array.isArray(f.blocked_by)) errors.push(`${where}: blocked_by must be a list`);
-    for (const dep of f.blocked_by ?? []) {
-      if (!map.has(dep)) errors.push(`${where}: blocked_by unknown id ${dep}`);
+    if (!Array.isArray(f.area) || f.area.length === 0)
+      errors.push(`${where}: area must be a non-empty list`);
+    if (!Array.isArray(f.blocked_by))
+      errors.push(
+        `${where}: blocked_by must be a list like [1, 2] (got ${JSON.stringify(f.blocked_by)})`,
+      );
+    for (const dep of i.deps) {
+      if (typeof dep !== "number") errors.push(`${where}: blocked_by entries must be numeric ids`);
+      else if (!map.has(dep)) errors.push(`${where}: blocked_by unknown id ${dep}`);
       if (dep === f.id) errors.push(`${where}: blocks itself`);
     }
-    if (!/^##\s+Acceptance criteria/m.test(i.body)) errors.push(`${where}: missing "## Acceptance criteria" section`);
+    for (const a of Array.isArray(f.area) ? f.area : []) {
+      if (typeof a !== "string" || /["',]/.test(a))
+        errors.push(`${where}: area items must be plain words without quotes or commas (got ${a})`);
+    }
+    if (!/^##\s+Acceptance criteria/m.test(i.body))
+      errors.push(`${where}: missing "## Acceptance criteria" section`);
   }
   // cycle detection
   const state = new Map();
@@ -130,7 +144,7 @@ function check(issues, milestones) {
       return;
     }
     state.set(id, "active");
-    for (const dep of map.get(id)?.fm.blocked_by ?? []) if (map.has(dep)) visit(dep, [...path, id]);
+    for (const dep of map.get(id)?.deps ?? []) if (map.has(dep)) visit(dep, [...path, id]);
     state.set(id, "done");
   };
   for (const i of issues) visit(i.fm.id, []);
@@ -142,6 +156,10 @@ function check(issues, milestones) {
 function setFields(issue, fields) {
   let fm = issue.rawFrontmatter;
   for (const [k, v] of Object.entries(fields)) {
+    if (/[\r\n"]/.test(String(v))) {
+      console.error(`refusing to write ${k}: value must be a single line without quotes`);
+      process.exit(1);
+    }
     const line = `${k}: ${typeof v === "string" && v === "" ? '""' : v}`;
     if (new RegExp(`^${k}:.*$`, "m").test(fm)) fm = fm.replace(new RegExp(`^${k}:.*$`, "m"), line);
     else fm += `\n${line}`;
@@ -156,13 +174,19 @@ const pad = (n) => String(n).padStart(3, "0");
 function fmtRow(i, map) {
   const f = i.fm;
   const b = blockers(i, map);
-  const state = f.status === "todo" ? (b.length ? `blocked by ${b.map(pad).join(",")}` : "ready") : f.status;
+  const state =
+    f.status === "todo" ? (b.length ? `blocked by ${b.map(pad).join(",")}` : "ready") : f.status;
   return `${pad(f.id)}  ${f.milestone}  ${f.owner.padEnd(5)}  ${f.size}  ${state.padEnd(22)}  ${f.title}`;
 }
 
 function board(issues, milestones) {
   const map = byId(issues);
-  const lines = ["# Board", "", `_Generated by \`node scripts/tracker.mjs board\`. Do not edit by hand._`, ""];
+  const lines = [
+    "# Board",
+    "",
+    `_Generated by \`node scripts/tracker.mjs board\`. Do not edit by hand._`,
+    "",
+  ];
   for (const ms of milestones) {
     const mine = issues.filter((i) => i.fm.milestone === ms.id);
     const done = mine.filter((i) => i.fm.status === "done").length;
@@ -177,10 +201,13 @@ function board(issues, milestones) {
       const b = blockers(i, map);
       let state;
       if (f.status === "done") state = `✅ done${f.merged ? ` (${f.merged})` : ""}`;
-      else if (f.status === "in-progress") state = `🔧 in progress${f.branch ? ` (\`${f.branch}\`)` : ""}`;
+      else if (f.status === "in-progress")
+        state = `🔧 in progress${f.branch ? ` (\`${f.branch}\`)` : ""}`;
       else if (b.length) state = `⏳ blocked by ${b.map((x) => `#${pad(x)}`).join(", ")}`;
       else state = f.owner === "human" ? "🙋 needs you" : "🟢 ready";
-      lines.push(`| [${pad(f.id)}](issues/${i.file}) | ${f.title} | ${f.owner} | ${f.size} | ${f.area.join(", ")} | ${state} |`);
+      lines.push(
+        `| [${pad(f.id)}](issues/${i.file}) | ${f.title} | ${f.owner} | ${f.size} | ${f.area.join(", ")} | ${state} |`,
+      );
     }
     lines.push("");
   }
@@ -217,23 +244,37 @@ switch (cmd) {
     for (const i of issues.filter(inMilestone(args[0]))) console.log(fmtRow(i, map));
     break;
   case "ready":
-    for (const i of issues.filter(inMilestone(args[0])).filter((i) => isReady(i, map))) console.log(fmtRow(i, map));
+    for (const i of issues.filter(inMilestone(args[0])).filter((i) => isReady(i, map)))
+      console.log(fmtRow(i, map));
     break;
   case "humans":
-    for (const i of issues.filter((i) => i.fm.owner === "human" && i.fm.status !== "done")) console.log(fmtRow(i, map));
+    for (const i of issues.filter((i) => i.fm.owner === "human" && i.fm.status !== "done"))
+      console.log(fmtRow(i, map));
     break;
   case "next": {
-    const inProgress = issues.filter((i) => i.fm.status === "in-progress" && i.fm.owner === "agent");
+    const inProgress = issues.filter(
+      (i) => i.fm.status === "in-progress" && i.fm.owner === "agent",
+    );
     if (inProgress.length) {
       console.log(`in progress:\n${inProgress.map((i) => fmtRow(i, map)).join("\n")}`);
     }
-    const next = issues.filter(inMilestone(args[0])).find((i) => i.fm.owner === "agent" && isReady(i, map));
+    const next = issues
+      .filter(inMilestone(args[0]))
+      .find((i) => i.fm.owner === "agent" && isReady(i, map));
     if (!next) {
-      const waiting = issues.filter(inMilestone(args[0])).filter((i) => i.fm.owner === "human" && i.fm.status !== "done");
-      console.log(waiting.length ? `nothing ready for the agent; waiting on human:\n${waiting.map((i) => fmtRow(i, map)).join("\n")}` : "nothing ready");
+      const waiting = issues
+        .filter(inMilestone(args[0]))
+        .filter((i) => i.fm.owner === "human" && i.fm.status !== "done");
+      console.log(
+        waiting.length
+          ? `nothing ready for the agent; waiting on human:\n${waiting.map((i) => fmtRow(i, map)).join("\n")}`
+          : "nothing ready",
+      );
       process.exit(1);
     }
-    console.log(`next: ${fmtRow(next, map)}\n\n${readFileSync(join(ISSUES_DIR, next.file), "utf8")}`);
+    console.log(
+      `next: ${fmtRow(next, map)}\n\n${readFileSync(join(ISSUES_DIR, next.file), "utf8")}`,
+    );
     break;
   }
   case "show":
@@ -242,10 +283,18 @@ switch (cmd) {
   case "start": {
     const i = find(args[0]);
     if (!isReady(i, map)) {
-      console.error(`issue ${pad(i.fm.id)} is not ready (status ${i.fm.status}, blocked by ${blockers(i, map).map(pad).join(",") || "none"})`);
+      console.error(
+        `issue ${pad(i.fm.id)} is not ready (status ${i.fm.status}, blocked by ${blockers(i, map).map(pad).join(",") || "none"})`,
+      );
       process.exit(1);
     }
-    const branch = args[1] ?? `feat/${pad(i.fm.id)}-${i.fm.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "").slice(0, 40)}`;
+    const branch =
+      args[1] ??
+      `feat/${pad(i.fm.id)}-${i.fm.title
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/(^-|-$)/g, "")
+        .slice(0, 40)}`;
     setFields(i, { status: "in-progress", branch });
     console.log(`started ${pad(i.fm.id)} on ${branch}`);
     break;
@@ -267,7 +316,12 @@ switch (cmd) {
     console.log(`wrote ${BOARD}`);
     break;
   default:
-    console.log(readFileSync(fileURLToPath(import.meta.url), "utf8").split("\n").slice(1, 15).join("\n"));
+    console.log(
+      readFileSync(fileURLToPath(import.meta.url), "utf8")
+        .split("\n")
+        .slice(1, 15)
+        .join("\n"),
+    );
     process.exit(cmd ? 1 : 0);
 }
 

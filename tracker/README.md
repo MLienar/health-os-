@@ -21,6 +21,7 @@ tracker/
   - `area` list from `db`, `shared`, `app`, `infra`, `docs`. Issues with disjoint areas may run in parallel.
   - `size` `S` (under an hour), `M` (a session), `L` (split if it grows).
   - `blocked_by` list of ids. `branch` and `merged` are filled by the script.
+  - Frontmatter is a deliberately tiny YAML subset: `key: scalar` or `key: [a, b]`. List items are plain words with no commas or quotes; `check` enforces this. Files are LF (`.gitattributes` forces it).
 
 ## Commands
 

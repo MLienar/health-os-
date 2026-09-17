@@ -1,0 +1,38 @@
+# dependencies
+node_modules/
+.pnpm-store/
+
+# build output
+dist/
+build/
+.expo/
+.expo-shared/
+web-build/
+*.tsbuildinfo
+
+# tests
+.playwright/
+playwright-report/
+test-results/
+coverage/
+
+# supabase local
+supabase/.temp/
+supabase/.branches/
+
+# env: never commit real values. Templates are documented in README.md.
+.env
+.env.*
+!.env.example
+
+# claude code local state
+.claude/.cc-writes/
+.claude/settings.local.json
+
+# os / editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.log

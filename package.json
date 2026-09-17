@@ -1,0 +1,22 @@
+{
+  "name": "health-os",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Personal diet + training tracker. Expo app (web first, iOS via Expo Go / EAS) + Supabase.",
+  "packageManager": "pnpm@10.30.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write .",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "test": "pnpm -r --if-present test",
+    "tracker": "node scripts/tracker.mjs"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.14",
+    "typescript": "^7.0.2"
+  }
+}

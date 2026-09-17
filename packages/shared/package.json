@@ -1,0 +1,13 @@
+{
+  "name": "@tracker/shared",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Domain types, zod schemas, and pure calculations shared by the app and Edge Functions. Filled in by #005.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  }
+}
