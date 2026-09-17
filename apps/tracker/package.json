@@ -6,7 +6,8 @@
   "scripts": {
     "start": "expo start",
     "web": "expo start --web",
-    "export:web": "expo export --platform web",
+    "export:web": "expo export --platform web && node scripts/inject-pwa.mjs dist",
+    "icons": "node scripts/gen-icons.mjs",
     "serve:web": "node scripts/serve-dist.mjs 4173",
     "typecheck": "tsc --noEmit",
     "test": "jest",
