@@ -1,0 +1,43 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls:*)",
+      "Bash(wc:*)",
+      "Bash(tr:*)",
+      "Bash(cut:*)",
+      "Bash(echo:*)",
+      "Bash(pnpm tsc:*)",
+      "Bash(pnpm vitest:*)",
+      "Bash(pnpm check:all:*)",
+      "Bash(pnpm nx:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git show:*)",
+      "Bash(git diff:*)",
+      "Bash(git fetch:*)",
+      "Bash(git remote get-url:*)",
+      "Bash(git log:*)",
+      "Bash(git status:*)",
+      "Bash(git merge-base:*)",
+      "Bash(git rev-parse:*)",
+      "Bash(git ls-files:*)",
+      "Bash(git ls-tree:*)",
+      "Bash(bash .claude/skills/peer-review/context.sh:*)",
+      "Bash(bash .claude/skills/peer-review/gitlab.sh:*)",
+      "Bash(bash .claude/skills/peer-review/cleanup.sh:*)",
+      "Bash(python3 .claude/skills/peer-review/post_findings.py:*)",
+      "Bash(pnpm eslint *)",
+      "Read(~./gitconfig)",
+      "Write(/tmp/claude/**)",
+      "Write(/private/tmp/claude/**)"
+    ],
+    "deny": [
+      "Read(env)",
+      "Read(env.*)",
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(./secrets/**)",
+      "Read(./config/credentials.json)"
+    ]
+  }
+}

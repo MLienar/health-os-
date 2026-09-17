@@ -90,11 +90,17 @@ diet-tracker/
   biome.json
   .claude/
     settings.json            # hooks (biome on edit, typecheck+test on stop), sandbox allowances
-    skills/                  # run-web, db-reset, new-migration, new-feature
+    skills/                  # next-issue, run-web, db-reset, new-migration, new-issue
+  scripts/tracker.mjs        # repo-local issue tracker CLI (zero deps)
+  tracker/
+    README.md                # the process: vocabulary, commands, the per-issue loop, merge policy
+    BOARD.md                 # generated overview
+    milestones/M*.md         # one per phase, with exit criterion
+    issues/NNN-*.md          # one per vertical slice: frontmatter + goal/scope/acceptance/verification
   docs/
-    tasks/                   # one file per vertical slice
     decisions/               # ADRs when a [DECISION] changes
     test-vectors/            # JSON vectors shared by shared/, SQL, future clients
+    conventions.md           # testID, route, fixture, and log naming
   apps/tracker/              # Expo app
     app.json  eas.json  metro.config.js  tailwind.config.js
     app/                     # Expo Router routes: (tabs)/, diary/[date], workout/active, recipes/, debug
@@ -358,13 +364,17 @@ Principle: **every layer gives the agent fast, deterministic, machine-readable f
 ### Repo tooling
 
 - `CLAUDE.md`: exact commands, architecture rules, definition of done.
-- Hooks: Biome format on every edited file; `pnpm typecheck && pnpm test` on stop.
-- Skills: `run-web`, `db-reset`, `new-migration`, `new-feature`.
+- Hooks: Biome format on every edited file; `pnpm typecheck && pnpm test` and `tracker check` on stop.
+- Skills: `next-issue` (runs the loop below), `run-web`, `db-reset`, `new-migration`, `new-issue`.
 - Agents: `code-reviewer`, `typescript-reviewer`, `security-reviewer` on anything touching auth, RLS, Edge Functions, or user input.
-- CI: Biome, typecheck, Jest, `supabase test db`, Playwright smoke, web export and deploy with PR previews.
+- CI: Biome, typecheck, Jest, `supabase test db`, `tracker check`, Playwright smoke, web export and deploy with previews.
 
-### Working in slices
+### Tracking: the repo is the tracker
 
-- Vertical slice per `docs/tasks/NNN-name.md`: goal, layers touched, acceptance criteria as checkboxes, verification commands. One branch and one PR each. Conventional commits.
-- Disjoint slices run in parallel git worktrees.
-- **Definition of done**: acceptance criteria checked; typecheck, lint, Jest, and `supabase test db` green; new behaviour tested at the lowest layer that can express it; any UI change has Playwright screenshots at both viewports; task file updated; no `[DECISION]` changed without an ADR.
+`[DECISION]` Issues and milestones live in `tracker/` as markdown files, not in GitHub Issues. Git history is the audit log. `scripts/tracker.mjs` validates the files, computes readiness from `blocked_by`, and regenerates `tracker/BOARD.md`. Full process in `tracker/README.md`.
+
+- Milestones = phases from §8, each with an exit criterion. Issues for a milestone are written when it becomes current (M0 and M1 exist now).
+- Issue = one vertical slice sized to a session: goal, scope, acceptance criteria as checkboxes, verification commands, verification log. `owner: human` marks the few things only Matheo can do (accounts, secrets, phone testing); they block dependents until done.
+- The loop per issue: `next` → `start` → build against criteria, cheapest verification first → reviewer agents → definition of done → squash-merge to `main` → `done` → report. `/loop /next-issue` repeats it until `next` reports only human work remains.
+- Disjoint issues (different `area`) run in parallel git worktrees.
+- Merge policy: the agent merges its own branches when the definition of done holds; Matheo reviews `main` in batches. `review: human` in an issue's frontmatter gates it.

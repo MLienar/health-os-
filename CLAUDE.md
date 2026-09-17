@@ -2,7 +2,21 @@
 
 One Expo (React Native) codebase targeting web first (also a PWA) and iOS (Expo Go now, EAS builds later) + Supabase backend. Single user. See `SPEC.md`; §10 describes the agentic workflow this file implements.
 
-**Status:** pre-Phase 0. The commands below describe the intended layout. Until Phase 0 scaffolding lands, treat a missing path as "not created yet", not as an error to work around.
+**Status:** M0 in progress. Work is tracked in `tracker/` (see below). Paths in the command table exist once the issue that creates them is done; until then treat a missing path as "not created yet", not as an error to work around.
+
+## Start here: the tracker
+
+`tracker/` is the issue tracker. Read `tracker/README.md` once; it defines the loop. Short version:
+
+```bash
+node scripts/tracker.mjs next        # the issue to work on now, printed in full (exit 1 = waiting on human)
+node scripts/tracker.mjs start <id>  # claim it, get the branch name
+node scripts/tracker.mjs done <id> <sha>
+node scripts/tracker.mjs humans      # what only Matheo can do
+node scripts/tracker.mjs check       # validate; must pass before committing anything under tracker/
+```
+
+The issue file is the contract: goal, scope, acceptance criteria, verification commands. Do not widen scope. Check criteria off in the file as you prove them, fill its `## Verification log`, and if reality disagrees with the issue, edit the issue in the same commit and say why. New work found mid-issue becomes a new issue file from `tracker/TEMPLATE.md`, never extra scope. The agent merges its own branch when the definition of done holds unless the issue has `review: human`.
 
 ## Commands
 
@@ -74,26 +88,36 @@ Local Supabase URLs: API `http://127.0.0.1:54321`, Studio `http://127.0.0.1:5432
 
 ## Workflow
 
-- Work in **vertical slices** from `docs/tasks/NNN-name.md`. One branch and one PR per slice. If no task file exists, create one with `/new-feature` first.
-- Conventional commits. Commit when a slice's acceptance criteria are met, not before.
-- Independent slices may run in parallel worktrees. Do not touch files outside your slice's declared scope.
+- Work one issue at a time from `tracker/`, following the loop in `tracker/README.md`. One issue per branch (`feat/NNN-slug`, from `start`). Nothing goes to `main` directly except tracker bookkeeping and hotfixes labelled as such.
+- Conventional commits. Squash-merge into `main` when the definition of done holds; the commit body lists the acceptance criteria met.
+- Independent issues (disjoint `area`) may run in parallel worktrees. Do not touch files outside the issue's `## Scope`.
 - Changing anything marked `[DECISION]` in `SPEC.md` requires a short ADR in `docs/decisions/`. Never change it silently.
-- Run `typescript-reviewer` and `code-reviewer` on every PR. Run `security-reviewer` on anything touching auth, RLS, Edge Functions, or user input.
+- Run `typescript-reviewer` and `code-reviewer` on every branch before merging. Run `security-reviewer` on anything touching auth, RLS, Edge Functions, or user input.
+- Git inside the Bash sandbox fails until issue #001 is done (it cannot read `~/.gitconfig`). Until then, git commands need an unsandboxed retry; say so rather than working around it.
 
 ## Definition of done
 
-1. Acceptance criteria in the task file are checked off.
-2. `pnpm typecheck`, `pnpm lint`, `pnpm test` green. `pnpm db:test` green if the slice touched SQL.
+1. Acceptance criteria in the issue file are checked off, each with the command or screenshot that proved it.
+2. `pnpm typecheck`, `pnpm lint`, `pnpm test` green. `pnpm db:test` green if the issue touched SQL. `node scripts/tracker.mjs check` green.
 3. New behaviour has a test at the lowest layer that can express it.
-4. Any UI change has Playwright screenshots at both viewports attached to the PR.
+4. Any UI change has Playwright screenshots at both viewports, paths recorded in the verification log.
 5. Route and `testID`s exist for any new screen or control.
-6. Task file updated; `SPEC.md` updated if scope changed.
+6. Issue file's verification log filled in; `SPEC.md` updated if scope changed; `tracker/BOARD.md` regenerated (the `done` command does this).
 
 Report the actual result of each check. If something is red or skipped, say so. iOS behaviour cannot be verified by the agent on this machine; say "not verified on iOS" rather than implying it was.
 
-## Environment notes
+## Environment notes (this machine)
 
+The Bash sandbox here is managed at a higher level and `/sandbox` cannot change it. Verified constraints and the rules that follow (details and log in `tracker/issues/001-*.md`):
+
+- **No loopback networking in the sandbox, either direction.** Sandboxed commands can neither start a server nor connect to one. Long-lived servers (`pnpm db:start`, `pnpm -F tracker web`) are started by Matheo with `!` or, if he asks, by the agent unsandboxed once per session. Browser verification goes through the **Playwright MCP server**, which runs outside the sandbox; the Playwright CLI, `supabase db reset`, `supabase test db`, and any curl to localhost run unsandboxed and will prompt. Say which one you are about to do and why.
+- **Docker socket is invisible.** Same rule: `supabase` container commands run unsandboxed.
+- **Git:** always prefix with `GIT_CONFIG_GLOBAL=/dev/null` and pass identity per command, since `~/.gitconfig` is unreadable and `.git/config` is not writable:
+  `GIT_CONFIG_GLOBAL=/dev/null git -c user.name="Matheo Lienard" -c user.email=mld@sahar.fr commit -m "…"`. Reads, staging, commits, branches work sandboxed. `git push` needs the SSH key and runs unsandboxed.
+- **Never use `rm`.** A hook blocks it. Build artifacts are gitignored; leave them. If a deletion is genuinely required, ask Matheo.
+- **`.env*` files are unreadable** by the agent (sandbox and project deny rules). Document every variable in `README.md`; write env files from that documentation without reading them back; never put real values in the repo.
+- **`.claude/skills`, `.claude/hooks`, `.claude/settings.json` are not writable** by the agent. Skill and hook content is authored under `docs/agent/` and Matheo copies it into place.
+- `pnpm view` and other npm pass-through commands fail (no `npm` on the sandbox PATH); use `pnpm add`, `pnpm outdated`, or a direct registry fetch. The pnpm store lives at `~/claude_access/.pnpm-store`, which is writable.
 - Node 22 and pnpm 10 are installed. Docker is installed. Supabase CLI and EAS CLI are dev dependencies. Deno is not installed and is only needed for Edge Function unit tests.
-- `.npmrc` sets `node-linker=hoisted`, which Expo requires in pnpm monorepos. Do not remove it.
-- Sandbox: `supabase start` needs the Docker socket allowed. Playwright browsers install to `.playwright/` in the repo via `PLAYWRIGHT_BROWSERS_PATH`. If the default pnpm store is blocked, use `pnpm config set store-dir .pnpm-store`.
+- `.npmrc` sets `node-linker=hoisted`, which Expo requires in pnpm monorepos. Do not remove it. Playwright browsers install to `.playwright/` in the repo via `PLAYWRIGHT_BROWSERS_PATH`.
 - No Xcode on this machine. Nothing in this repo may require it; iOS builds run on EAS.
